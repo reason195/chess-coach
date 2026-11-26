@@ -125,14 +125,42 @@ function isRateLimitError(err: unknown): boolean {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function run(model: GenerativeModel, prompt: string): Promise<AIResult> {
+async function run(
+  model: GenerativeModel,
+  prompt: string,
+  timeoutMs?: number,
+): Promise<AIResult> {
   // Cloud calls can hit the free-tier rate limit (429); retry a few times
   // with exponential backoff (PLAN risk 4). On-device failures are not
   // rate limits, so they surface immediately on the first attempt.
+  //
+  // A cloud call with no timeout hangs the UI on "Thinking…" forever when
+  // the network stalls (observed 2026-11-24: 4 min, no result, no error).
+  // Callers that pass timeoutMs get a diagnosable error instead. On-device
+  // calls deliberately pass no timeout: Nano took ~90 s on this machine.
   let lastError: unknown;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const result = await model.generateContent(prompt);
+      const call = model.generateContent(prompt);
+      const result =
+        timeoutMs === undefined
+          ? await call
+          : await Promise.race([
+              call,
+              new Promise<never>((_resolve, reject) =>
+                setTimeout(
+                  () =>
+                    reject(
+                      new Error(
+                        `Cloud request timed out after ${timeoutMs / 1000}s with no response. ` +
+                          `If the proxy is off, switch it to global mode and retry; ` +
+                          `if it still fails, check App Check enforcement in Firebase Console.`,
+                      ),
+                    ),
+                  timeoutMs,
+                ),
+              ),
+            ]);
       return { text: result.response.text(), source: sourceOf(result.response) };
     } catch (err) {
       lastError = err;
@@ -162,5 +190,7 @@ export async function explainMoveOffline(ctx: MoveContext): Promise<AIResult> {
 
 /** Whole-game deep review: cloud only, structured JSON in the text body. */
 export async function deepReview(game: GameSummary): Promise<AIResult> {
-  return run(getCloudModel(), deepReviewPrompt(game));
+  // 60 s is generous for Gemini 2.5 Flash (normally seconds); without it a
+  // stalled connection hangs the UI indefinitely with no error to act on.
+  return run(getCloudModel(), deepReviewPrompt(game), 60_000);
 }
