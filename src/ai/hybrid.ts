@@ -192,7 +192,9 @@ export async function explainMoveOffline(ctx: MoveContext): Promise<AIResult> {
 
 /** Whole-game deep review: cloud only, structured JSON in the text body. */
 export async function deepReview(game: GameSummary): Promise<AIResult> {
-  // 60 s is generous for Gemini 2.5 Flash (normally seconds); without it a
-  // stalled connection hangs the UI indefinitely with no error to act on.
-  return run(getCloudModel(), deepReviewPrompt(game), 60_000);
+  // A timeout is essential (without it a stalled connection hangs the UI
+  // indefinitely), but 60 s proved too tight on 2026-11-28: with App Check
+  // unenforced and a valid model, the request was accepted yet produced
+  // no response within 60 s. 150 s gives a slow generation room to land.
+  return run(getCloudModel(), deepReviewPrompt(game), 150_000);
 }
