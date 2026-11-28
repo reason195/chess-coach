@@ -193,9 +193,14 @@ async function analyseCurrent(): Promise<void> {
   }
 }
 
-async function analyseAll(): Promise<void> {
+async function analyseAll(maxMs?: number): Promise<void> {
   if (!game) return;
+  const started = Date.now();
   for (let i = 0; i < game.plies.length; i++) {
+    // Callers that cannot wait indefinitely (the deep-review handler)
+    // pass a budget: past it, stop here and let them continue with the
+    // evaluations gathered so far — the review digest tolerates gaps.
+    if (maxMs !== undefined && Date.now() - started > maxMs) break;
     const ply = game.plies[i];
     try {
       const [before, after] = await Promise.all([
@@ -351,7 +356,9 @@ function wire(): void {
     const g = game;
     await withBusy(async () => {
       try {
-        await analyseAll();
+        setStatus(t(lang, "engineAnalysing"));
+        await analyseAll(20_000);
+        setStatus(t(lang, "thinking"));
         const digest = g.plies.map((ply, i) => {
           const before = evalCache.get(ply.fenBefore);
           const after = evalCache.get(ply.fenAfter);

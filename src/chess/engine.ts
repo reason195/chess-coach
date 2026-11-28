@@ -84,9 +84,28 @@ export class StockfishEngine {
       await new Promise((r) => setTimeout(r, 50));
     }
     return new Promise<EvalResult>((resolve, reject) => {
+      // A wedged worker never sends `bestmove`; without a timeout this
+      // promise never settles and the serial queue in evaluate() stalls
+      // every later evaluation (observed 2026-11-28: the deep-review
+      // handler waited on analyseAll() forever). On timeout, restart the
+      // worker so the next evaluation starts from a clean engine.
+      const timer = setTimeout(() => {
+        if (!this.pending) return;
+        this.pending = null;
+        this.worker?.terminate();
+        this.worker = null;
+        this.ready = false;
+        reject(new Error("Stockfish evaluation timed out after 15s"));
+      }, 15_000);
       this.pending = {
-        resolve,
-        reject,
+        resolve: (v) => {
+          clearTimeout(timer);
+          resolve(v);
+        },
+        reject: (e) => {
+          clearTimeout(timer);
+          reject(e);
+        },
         best: { cp: null, mate: null, depth: 0, bestMoveUci: null },
       };
       worker.postMessage(`position fen ${fen}`);
