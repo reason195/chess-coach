@@ -30,7 +30,9 @@ import {
 
 const CLOUD_MODEL =
   (import.meta.env.VITE_CLOUD_MODEL as string | undefined) ??
-  "gemini-2.5-flash";
+  // gemini-2.5-flash was retired for new users (404 from the API on
+  // 2026-11-28); the error message itself names this replacement.
+  "gemini-3.8-flash";
 
 export type InferenceSourceLabel = "on_device" | "in_cloud" | "unknown";
 
